@@ -1,0 +1,74 @@
+function doPost(e) {
+  const jsonData = JSON.parse(e.postData.contents);
+  const base64Data = jsonData.image;
+  if (!base64Data) {
+    return sendTextOutput("")
+  }
+  // base64を元にMarkdown変換
+  const markdown = convertToMarkdown(base64Data);
+
+  return sendTextOutput(markdown)
+}
+
+function sendTextOutput(content) {
+  return ContentService
+    .createTextOutput(content)
+    .setMimeType(ContentService.MimeType.TEXT);
+}
+
+const SYSTEM_PROMPT = `あなたはスクリーンショットをmarkdownに変換するアシスタントです。以下に注意して変換してください。
+
+- 画像内の文字を読み取ってmarkdownに変換してください。その際、必要に応じてmarkdown tableやlist、boldなどの記法を使い、なるべく画像内の文字を忠実に再現するように努めてください。
+  - 特にテーブルやリストでうまく表現できる場合は積極的に使ってください。
+- 回答形式は、変換したmarkdownのみとしてください。前置きや解説は不要です。`
+
+function convertToMarkdown(base64) {
+  const apiKey = PropertiesService.getScriptProperties().getProperty("API_KEY");
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${apiKey}`;
+
+  const payload = {
+    "contents": {
+      "role": "USER",
+      "parts": [
+        {
+          "inlineData": {
+            "data": base64,
+            "mimeType": "image/png"
+          }
+        },
+        {
+          "text": "スクリーンショットをmarkdownに文字起こししてください。"
+        }
+      ]
+    },
+    "system_instruction": {
+      "parts": [
+        {
+          "text": SYSTEM_PROMPT,
+        }
+      ]
+    },
+    "generation_config": {
+      "temperature": 0,
+    }
+  };
+
+  const options = {
+    "method": "post",
+    "contentType": "application/json",
+    "payload": JSON.stringify(payload)
+  };
+
+  const response = UrlFetchApp.fetch(endpoint, options);
+  const json = JSON.parse(response.getContentText());
+
+  const output = (json.candidates && json.candidates.length > 0 &&
+    json.candidates[0].content && json.candidates[0].content.parts &&
+    json.candidates[0].content.parts.length > 0)
+    ? json.candidates[0].content.parts[0].text
+    : "";
+
+  console.log(output);
+
+  return output;
+}
